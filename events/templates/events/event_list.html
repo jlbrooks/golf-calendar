@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Golf Events - Golf Calendar{% endblock %}
+
+{% block content %}
+<div x-data="{ showFilters: true }">
+    <!-- Header -->
+    <div class="mb-8">
+        <h2 class="text-3xl font-bold text-gray-900">Golf Events</h2>
+        <p class="mt-2 text-gray-600">Find professional and amateur golf tournaments</p>
+    </div>
+
+    <!-- Filters Section -->
+    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold text-gray-900">Filters</h3>
+            <button
+                @click="showFilters = !showFilters"
+                class="text-sm text-blue-600 hover:text-blue-800"
+            >
+                <span x-show="showFilters">Hide</span>
+                <span x-show="!showFilters">Show</span>
+            </button>
+        </div>
+
+        <form
+            x-show="showFilters"
+            x-transition
+            hx-get="{% url 'events:event_list' %}"
+            hx-target="#event-table"
+            hx-trigger="change, submit"
+            hx-indicator="#loading"
+            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+        >
+            <!-- Tour Filter -->
+            <div>
+                <label for="tour" class="block text-sm font-medium text-gray-700 mb-1">Tour</label>
+                <select
+                    name="tour"
+                    id="tour"
+                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+                    <option value="">All Tours</option>
+                    {% for tour in tours %}
+                        <option value="{{ tour.id }}" {% if filters.tour == tour.id|stringformat:"s" %}selected{% endif %}>
+                            {{ tour.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Category Filter -->
+            <div>
+                <label for="category" class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                    name="category"
+                    id="category"
+                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+                    <option value="">All Categories</option>
+                    {% for value, label in categories %}
+                        <option value="{{ value }}" {% if filters.category == value %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Status Filter -->
+            <div>
+                <label for="status" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                    name="status"
+                    id="status"
+                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+                    <option value="">All Statuses</option>
+                    {% for value, label in statuses %}
+                        <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Start Date -->
+            <div>
+                <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">From Date</label>
+                <input
+                    type="date"
+                    name="start_date"
+                    id="start_date"
+                    value="{{ filters.start_date }}"
+                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+            </div>
+
+            <!-- End Date -->
+            <div>
+                <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">To Date</label>
+                <input
+                    type="date"
+                    name="end_date"
+                    id="end_date"
+                    value="{{ filters.end_date }}"
+                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+            </div>
+
+            <!-- Location -->
+            <div>
+                <label for="location" class="block text-sm font-medium text-gray-700 mb-1">Location</label>
+                <input
+                    type="text"
+                    name="location"
+                    id="location"
+                    value="{{ filters.location }}"
+                    placeholder="e.g., Augusta, GA, USA"
+                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+            </div>
+
+            <!-- Radius -->
+            <div>
+                <label for="radius" class="block text-sm font-medium text-gray-700 mb-1">Radius (miles)</label>
+                <input
+                    type="number"
+                    name="radius"
+                    id="radius"
+                    value="{{ filters.radius }}"
+                    placeholder="50"
+                    min="1"
+                    max="5000"
+                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                >
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex items-end gap-2">
+                <button
+                    type="submit"
+                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                >
+                    Apply Filters
+                </button>
+                <a
+                    href="{% url 'events:event_list' %}"
+                    class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                >
+                    Clear
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div id="loading" class="htmx-indicator mb-4">
+        <div class="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded">
+            Loading events...
+        </div>
+    </div>
+
+    <!-- Events Table -->
+    <div id="event-table">
+        {% include "events/_event_table.html" %}
+    </div>
+</div>
+{% endblock %}

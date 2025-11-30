@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@source "../../templates/**/*.html";
+@source "../../events/templates/**/*.html";
+
+@layer utilities {
+    .htmx-indicator {
+        display: none;
+    }
+    .htmx-request .htmx-indicator,
+    .htmx-request.htmx-indicator {
+        display: block;
+    }
+}
