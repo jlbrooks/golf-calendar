@@ -1,0 +1,11 @@
+name,venue_name,city,state,country,start_date,end_date,tour_name,category,external_url
+The Sentry,Kapalua Resort - The Plantation Course,Kapalua,Hawaii,USA,2025-01-02,2025-01-05,PGA Tour,regular,https://www.pgatour.com
+Sony Open in Hawaii,Waialae Country Club,Honolulu,Hawaii,USA,2025-01-09,2025-01-12,PGA Tour,regular,https://www.pgatour.com
+The American Express,PGA WEST,La Quinta,California,USA,2025-01-16,2025-01-19,PGA Tour,regular,https://www.pgatour.com
+Farmers Insurance Open,Torrey Pines Golf Course,San Diego,California,USA,2025-01-22,2025-01-25,PGA Tour,regular,https://www.pgatour.com
+WM Phoenix Open,TPC Scottsdale,Scottsdale,Arizona,USA,2025-02-06,2025-02-09,PGA Tour,regular,https://www.pgatour.com
+The Genesis Invitational,Riviera Country Club,Pacific Palisades,California,USA,2025-02-13,2025-02-16,PGA Tour,regular,https://www.pgatour.com
+The Masters Tournament,Augusta National Golf Club,Augusta,Georgia,USA,2025-04-10,2025-04-13,,major,https://www.masters.com
+PGA Championship,Quail Hollow Club,Charlotte,North Carolina,USA,2025-05-15,2025-05-18,,major,https://www.pga.com
+U.S. Open,Oakmont Country Club,Oakmont,Pennsylvania,USA,2025-06-12,2025-06-15,,major,https://www.usopen.com
+The Open Championship,Royal Portrush Golf Club,Portrush,,Northern Ireland,2025-07-17,2025-07-20,,major,https://www.theopen.com
