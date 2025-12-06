@@ -17,8 +17,11 @@ def event_list(request):
     status = request.GET.get('status')
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
-    location = request.GET.get('location')
-    radius = request.GET.get('radius', '50')
+    location = request.GET.get('location') or ''
+    # Normalize "none" string to empty string
+    if location and location.lower() == 'none':
+        location = ''
+    radius = request.GET.get('radius', '100')
     show_past_events = request.GET.get('show_past_events') == 'true'
 
     # Filter out past events by default

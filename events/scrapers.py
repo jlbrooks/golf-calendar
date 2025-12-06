@@ -969,3 +969,315 @@ class KornFerryTourScraper:
         }
 
         return states.get(state_abbr, state_abbr)
+
+
+class LIVGolfScraper:
+    """Scraper for LIV Golf schedule using browser automation."""
+
+    BASE_URL = "https://www.livgolf.com"
+    SCHEDULE_URL = "https://www.livgolf.com/schedule"
+
+    def __init__(self):
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.page = None
+
+    def __enter__(self):
+        self.playwright = sync_playwright().start()
+
+        self.browser = self.playwright.chromium.launch(
+            headless=True,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+            ]
+        )
+
+        self.context = self.browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            viewport={'width': 1920, 'height': 1080},
+            locale='en-US',
+            timezone_id='America/New_York',
+            permissions=[],
+            extra_http_headers={
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+            }
+        )
+
+        self.page = self.context.new_page()
+
+        self.page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.chrome = {
+                runtime: {}
+            };
+        """)
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.page:
+            self.page.close()
+        if self.context:
+            self.context.close()
+        if self.browser:
+            self.browser.close()
+        if self.playwright:
+            self.playwright.stop()
+
+    def fetch_schedule(self) -> List[Dict]:
+        """Fetch tournament schedule from LIV Golf using browser automation."""
+        if not self.page:
+            raise RuntimeError("Scraper must be used as context manager: with LIVGolfScraper() as scraper:")
+
+        response = self.page.goto(self.SCHEDULE_URL, wait_until='domcontentloaded', timeout=90000)
+
+        if response and response.status != 200:
+            raise Exception(f"HTTP {response.status}: {response.status_text}")
+
+        import time
+        time.sleep(3)
+
+        try:
+            self.page.wait_for_selector('main, h1, [class*="schedule"]', timeout=10000)
+        except PlaywrightTimeoutError:
+            pass
+
+        html_content = self.page.content()
+        events = self._parse_schedule_html(html_content)
+
+        return events
+
+    def _parse_schedule_html(self, html: str) -> List[Dict]:
+        """Parse the schedule HTML to extract events."""
+        soup = BeautifulSoup(html, 'html.parser')
+        events = []
+
+        # Find the main schedule container
+        main = soup.find('main')
+        if not main:
+            return events
+
+        # Find all paragraphs that match the date pattern (format: "FEB 04-07, 2026")
+        # Then find their parent containers which should contain the event data
+        date_pattern = re.compile(r'[A-Z]{3}\s+\d{2}-\d{2},\s+\d{4}')
+        all_paragraphs = main.find_all('p')
+        
+        processed_containers = set()
+        
+        for p in all_paragraphs:
+            text = p.get_text(strip=True)
+            if date_pattern.match(text):
+                # Find the event container (parent div/article)
+                container = p.find_parent(['div', 'article'])
+                if not container:
+                    # Try going up a few levels
+                    parent = p.parent
+                    for _ in range(3):
+                        if parent and parent.name in ['div', 'article']:
+                            container = parent
+                            break
+                        parent = parent.parent if parent else None
+                
+                if container and id(container) not in processed_containers:
+                    processed_containers.add(id(container))
+                    event_data = self._parse_event_container(container)
+                    if event_data:
+                        events.append(event_data)
+
+        return events
+
+    def _parse_event_container(self, container) -> Optional[Dict]:
+        """Parse a single event container to extract event data."""
+        # Find event name from img alt or text
+        # Look for images with alt text that looks like event names (e.g., "Riyadh 2026")
+        name = None
+        imgs = container.find_all('img')
+        for img in imgs:
+            alt = img.get('alt', '') or img.get('title', '')
+            if alt and len(alt) > 3:
+                # Check if it looks like an event name (contains year or location name)
+                if re.search(r'\d{4}|[A-Z][a-z]+', alt):
+                    name = alt
+                    break
+        
+        # If no name from image, try to find text in the container
+        if not name:
+            # Look for text that might be the event name
+            text_elements = container.find_all(string=True, recursive=True)
+            for text in text_elements:
+                text = text.strip()
+                # Skip very short text, dates, and common words
+                if (len(text) > 5 and 
+                    not re.match(r'[A-Z]{3}\s+\d{2}-\d{2}', text) and
+                    text not in ['Event Details', 'Get Tickets', 'Join Waitlist'] and
+                    not text.isdigit()):
+                    # Check if it looks like an event name
+                    if re.search(r'\d{4}|[A-Z][a-z]+', text):
+                        name = text
+                        break
+
+        if not name:
+            return None
+
+        # Find date paragraph (format: "FEB 04-07, 2026")
+        date_text = None
+        paragraphs = container.find_all('p')
+        for p in paragraphs:
+            text = p.get_text(strip=True)
+            if re.match(r'[A-Z]{3}\s+\d{2}-\d{2},\s+\d{4}', text):
+                date_text = text
+                break
+
+        if not date_text:
+            return None
+
+        start_date, end_date = self._parse_date_range(date_text)
+        if not start_date or not end_date:
+            return None
+
+        # Find venue/location paragraph (usually after date)
+        venue_location = None
+        for p in paragraphs:
+            text = p.get_text(strip=True)
+            # Skip date paragraphs and very short text
+            if not re.match(r'[A-Z]{3}\s+\d{2}-\d{2},\s+\d{4}', text) and len(text) > 5:
+                # Check if it looks like a location (has comma or is a venue name)
+                if ',' in text or any(word in text.lower() for word in ['golf', 'club', 'country', 'ranch', 'park']):
+                    venue_location = text
+                    break
+
+        if not venue_location:
+            venue_location = f"{name} Course"
+
+        venue, city, state, country = self._parse_venue_location(venue_location)
+
+        # Find Event Details link
+        external_url = ''
+        event_details_link = container.find('a', string=re.compile(r'Event Details', re.I))
+        if event_details_link and event_details_link.get('href'):
+            href = event_details_link['href']
+            if href.startswith('/'):
+                external_url = f"{self.BASE_URL}{href}"
+            elif href.startswith('http'):
+                external_url = href
+
+        return {
+            'name': name.strip(),
+            'start_date': start_date,
+            'end_date': end_date,
+            'venue': venue,
+            'city': city,
+            'state': state,
+            'country': country,
+            'category': 'regular',
+            'external_url': external_url,
+        }
+
+    def _parse_date_range(self, date_text: str) -> tuple[Optional[datetime.date], Optional[datetime.date]]:
+        """Parse date range like 'FEB 04-07, 2026'."""
+        # Extract year
+        year_match = re.search(r'(\d{4})', date_text)
+        year = int(year_match.group(1)) if year_match else datetime.now().year
+
+        # Pattern: "FEB 04-07, 2026"
+        pattern = r'([A-Z]{3})\s+(\d{2})-(\d{2}),\s+\d{4}'
+        match = re.search(pattern, date_text)
+
+        if match:
+            month_str = match.group(1)
+            start_day = int(match.group(2))
+            end_day = int(match.group(3))
+
+            month_num = self._parse_month(month_str)
+            if not month_num:
+                return None, None
+
+            start_date = datetime(year, month_num, start_day).date()
+            end_date = datetime(year, month_num, end_day).date()
+
+            return start_date, end_date
+
+        return None, None
+
+    def _parse_month(self, month_str: str) -> Optional[int]:
+        """Convert month abbreviation to month number."""
+        month_str = month_str.upper()[:3]
+        months = {
+            'JAN': 1, 'FEB': 2, 'MAR': 3, 'APR': 4,
+            'MAY': 5, 'JUN': 6, 'JUL': 7, 'AUG': 8,
+            'SEP': 9, 'OCT': 10, 'NOV': 11, 'DEC': 12
+        }
+        return months.get(month_str)
+
+    def _parse_venue_location(self, location_str: str) -> tuple[str, str, str, str]:
+        """
+        Parse venue/location string into venue, city, state, country.
+        Examples:
+        - "Riyadh Golf Club, Saudi Arabia" -> venue="Riyadh Golf Club", city="Riyadh", state="", country="Saudi Arabia"
+        - "The Grange Golf Club, Australia" -> venue="The Grange Golf Club", city="", state="", country="Australia"
+        - "Trump National DC, USA" -> venue="Trump National DC", city="", state="DC", country="USA"
+        - "Hong Kong Golf Club at Fanling, Hong Kong" -> venue="Hong Kong Golf Club at Fanling", city="Hong Kong", state="", country="Hong Kong"
+        """
+        if not location_str:
+            return '', '', '', 'USA'
+
+        parts = [p.strip() for p in location_str.split(',')]
+
+        if len(parts) == 2:
+            venue = parts[0].strip()
+            country_part = parts[1].strip()
+
+            # Handle US states
+            if country_part == 'USA':
+                # Try to extract city from venue if it contains location info
+                # For now, just use venue name and empty city
+                return venue, '', '', 'USA'
+            else:
+                # International location
+                # Try to extract city from venue name if it starts with city name
+                city = ''
+                if venue and ' ' in venue:
+                    # Check if first word might be a city
+                    first_word = venue.split()[0]
+                    if len(first_word) > 2 and first_word[0].isupper():
+                        city = first_word
+
+                return venue, city, '', country_part
+
+        elif len(parts) == 1:
+            # Single part - could be venue only or venue with city embedded
+            venue = parts[0].strip()
+            return venue, '', '', 'USA'
+
+        # More than 2 parts - handle complex cases
+        venue = parts[0].strip()
+        country = parts[-1].strip()
+
+        # Check if second part is a state/region
+        state = ''
+        if len(parts) > 2:
+            state = parts[1].strip()
+
+        # Extract city from venue if possible
+        city = ''
+        if venue and ' ' in venue:
+            first_word = venue.split()[0]
+            if len(first_word) > 2 and first_word[0].isupper():
+                city = first_word
+
+        return venue, city, state, country
