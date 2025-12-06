@@ -22,11 +22,21 @@ COPY pyproject.toml uv.lock ./
 # Install dependencies
 RUN uv sync --frozen --no-cache
 
+# Copy Tailwind CSS binary
+COPY tailwindcss /usr/local/bin/tailwindcss
+RUN chmod +x /usr/local/bin/tailwindcss
+
 # Copy application code
 COPY . .
+
+# Build Tailwind CSS (scans templates for classes, overwrites any existing output.css)
+RUN /usr/local/bin/tailwindcss -i static/css/input.css -o static/css/output.css --minify
+
+# Collect static files during build (doesn't require database)
+RUN uv run python manage.py collectstatic --noinput
 
 # Expose port 8000
 EXPOSE 8000
 
-# Run migrations and start server
+# Default command (can be overridden in docker-compose)
 CMD ["uv", "run", "gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
