@@ -3,126 +3,262 @@
 {% block title %}Golf Events - Golf Calendar{% endblock %}
 
 {% block content %}
-<div x-data="{ showFilters: true }">
-    <!-- Header -->
-    <div class="mb-8">
-        <h2 class="text-3xl font-bold text-gray-900">Golf Events</h2>
-        <p class="mt-2 text-gray-600">Find professional and amateur golf tournaments</p>
+<div x-data="{
+    isFilterExpanded: false,
+    searchQuery: '',
+    searchResults: [],
+    isSearching: false,
+    showResults: false,
+    selectedLocation: null,
+
+    searchLocation() {
+        if (this.searchQuery.length < 2) {
+            this.searchResults = [];
+            this.showResults = false;
+            return;
+        }
+
+        this.isSearching = true;
+        fetch('{% url 'events:location_autocomplete' %}?q=' + encodeURIComponent(this.searchQuery))
+            .then(response => response.json())
+            .then(data => {
+                this.searchResults = data.results || [];
+                this.showResults = this.searchResults.length > 0;
+                this.isSearching = false;
+            })
+            .catch(error => {
+                console.error('Search error:', error);
+                this.searchResults = [];
+                this.isSearching = false;
+            });
+    },
+
+    selectLocation(result) {
+        this.selectedLocation = result;
+        this.searchQuery = result.display_name;
+        this.showResults = false;
+
+        let locationParts = [];
+        if (result.city) locationParts.push(result.city);
+        if (result.state && result.state !== result.city) locationParts.push(result.state);
+        if (result.country) locationParts.push(result.country);
+
+        const locationString = locationParts.join(', ');
+        document.getElementById('location').value = locationString;
+
+        this.isFilterExpanded = true;
+
+        document.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    },
+
+    clearSearch() {
+        this.searchQuery = '';
+        this.searchResults = [];
+        this.showResults = false;
+        this.selectedLocation = null;
+    }
+}">
+    <!-- Hero Section with Search -->
+    <div class="mb-12">
+        <div class="text-center mb-8">
+            <h2 class="text-4xl font-bold text-slate-900 mb-3">Find Golf Tournaments Near You</h2>
+            <p class="text-lg text-slate-500">Search by city, state, or country to discover upcoming events</p>
+        </div>
+
+        <!-- Prominent Search Bar -->
+        <div class="max-w-3xl mx-auto relative">
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg class="h-6 w-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                </div>
+                <input
+                    type="text"
+                    x-model="searchQuery"
+                    @input.debounce.300ms="searchLocation()"
+                    @focus="searchLocation()"
+                    @click.away="showResults = false"
+                    placeholder="Enter your location (e.g., San Diego, California)"
+                    class="w-full pl-14 pr-12 py-5 text-lg border-2 border-gray-300 rounded-2xl focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 shadow-lg transition-all"
+                />
+                <div class="absolute inset-y-0 right-0 pr-4 flex items-center">
+                    <button
+                        x-show="searchQuery.length > 0"
+                        @click="clearSearch()"
+                        type="button"
+                        class="text-gray-400 hover:text-gray-600 transition-colors"
+                    >
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                    <div x-show="isSearching" class="ml-2">
+                        <svg class="animate-spin h-5 w-5 text-emerald-600" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Autocomplete Results Dropdown -->
+            <div
+                x-show="showResults"
+                x-transition
+                class="absolute z-50 w-full mt-2 bg-white rounded-xl shadow-2xl border border-gray-200 max-h-96 overflow-y-auto"
+            >
+                <template x-for="result in searchResults" :key="result.display_name">
+                    <button
+                        @click="selectLocation(result)"
+                        type="button"
+                        class="w-full px-4 py-3 text-left hover:bg-emerald-50 transition-colors border-b border-gray-100 last:border-b-0 flex items-start gap-3 group"
+                    >
+                        <svg class="w-5 h-5 text-gray-400 group-hover:text-emerald-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-slate-900 group-hover:text-emerald-800" x-text="result.display_name"></p>
+                            <p class="text-xs text-slate-500 mt-0.5" x-text="result.type"></p>
+                        </div>
+                    </button>
+                </template>
+            </div>
+        </div>
+
+        <!-- Quick Tips -->
+        <div class="max-w-3xl mx-auto mt-6 text-center">
+            <p class="text-sm text-slate-400">
+                <span class="font-medium">Tip:</span> Search by city, state (e.g., "California, USA"), or country. Use
+                <button @click="isFilterExpanded = true" class="text-emerald-600 hover:text-emerald-700 font-medium underline">advanced filters</button>
+                for date ranges and tour filtering
+            </p>
+        </div>
     </div>
 
-    <!-- Filters Section -->
-    <div class="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-900">Filters</h3>
-            <button
-                @click="showFilters = !showFilters"
-                class="text-sm text-blue-600 hover:text-blue-800"
+    <!-- Filters Panel -->
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8 transition-all duration-300">
+        <div
+            @click="isFilterExpanded = !isFilterExpanded"
+            class="flex items-center justify-between p-4 bg-gray-50/50 cursor-pointer border-b border-gray-100 hover:bg-gray-50"
+        >
+            <div class="flex items-center gap-2 text-emerald-800 font-semibold">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path>
+                </svg>
+                <span>Filters & Search</span>
+            </div>
+            <svg
+                class="w-5 h-5 text-gray-400 transition-transform"
+                :class="isFilterExpanded ? 'rotate-180' : ''"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
             >
-                <span x-show="showFilters">Hide</span>
-                <span x-show="!showFilters">Show</span>
-            </button>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+            </svg>
         </div>
 
         <form
-            x-show="showFilters"
+            x-show="isFilterExpanded"
             x-transition
             hx-get="{% url 'events:event_list' %}"
-            hx-target="#event-table"
+            hx-target="#event-results"
             hx-trigger="change, submit"
             hx-indicator="#loading"
-            class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+            class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
         >
-            <!-- Tour Filter -->
-            <div>
-                <label for="tour" class="block text-sm font-medium text-gray-700 mb-1">Tour</label>
-                <select
-                    name="tour"
-                    id="tour"
-                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-                    <option value="">All Tours</option>
-                    {% for tour in tours %}
-                        <option value="{{ tour.id }}" {% if filters.tour == tour.id|stringformat:"s" %}selected{% endif %}>
-                            {{ tour.name }}
-                        </option>
-                    {% endfor %}
-                </select>
+            <!-- Tour Select -->
+            <div class="space-y-2">
+                <label for="tour" class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Tour</label>
+                <div class="relative">
+                    <select
+                        name="tour"
+                        id="tour"
+                        class="w-full pl-3 pr-10 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 appearance-none text-sm text-slate-700 font-medium shadow-sm transition-shadow"
+                    >
+                        <option value="">All Tours</option>
+                        {% for tour in tours %}
+                            <option value="{{ tour.id }}" {% if filters.tour == tour.id|stringformat:"s" %}selected{% endif %}>
+                                {{ tour.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <svg class="absolute right-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </div>
             </div>
 
-            <!-- Category Filter -->
-            <div>
-                <label for="category" class="block text-sm font-medium text-gray-700 mb-1">Category</label>
-                <select
-                    name="category"
-                    id="category"
-                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-                    <option value="">All Categories</option>
-                    {% for value, label in categories %}
-                        <option value="{{ value }}" {% if filters.category == value %}selected{% endif %}>
-                            {{ label }}
-                        </option>
-                    {% endfor %}
-                </select>
+            <!-- Category Select -->
+            <div class="space-y-2">
+                <label for="category" class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</label>
+                <div class="relative">
+                    <select
+                        name="category"
+                        id="category"
+                        class="w-full pl-3 pr-10 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 appearance-none text-sm text-slate-700 font-medium shadow-sm transition-shadow"
+                    >
+                        <option value="">All Categories</option>
+                        {% for value, label in categories %}
+                            <option value="{{ value }}" {% if filters.category == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <svg class="absolute right-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </div>
             </div>
 
-            <!-- Status Filter -->
-            <div>
-                <label for="status" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select
-                    name="status"
-                    id="status"
-                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-                    <option value="">All Statuses</option>
-                    {% for value, label in statuses %}
-                        <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>
-                            {{ label }}
-                        </option>
-                    {% endfor %}
-                </select>
+            <!-- Location Input -->
+            <div class="space-y-2">
+                <label for="location" class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Location</label>
+                <div class="relative">
+                    <input
+                        type="text"
+                        name="location"
+                        id="location"
+                        value="{{ filters.location }}"
+                        placeholder="City or State"
+                        class="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm shadow-sm"
+                    />
+                    <svg class="absolute left-3 top-3 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                </div>
             </div>
 
-            <!-- Start Date -->
-            <div>
-                <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">From Date</label>
-                <input
-                    type="date"
-                    name="start_date"
-                    id="start_date"
-                    value="{{ filters.start_date }}"
-                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
+            <!-- Date Range -->
+            <div class="space-y-2">
+                <label class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Date Range</label>
+                <div class="flex gap-2">
+                    <input
+                        type="date"
+                        name="start_date"
+                        id="start_date"
+                        value="{{ filters.start_date }}"
+                        class="flex-1 pl-3 pr-2 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm shadow-sm text-gray-600"
+                    />
+                    <input
+                        type="date"
+                        name="end_date"
+                        id="end_date"
+                        value="{{ filters.end_date }}"
+                        class="flex-1 pl-3 pr-2 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 text-sm shadow-sm text-gray-600"
+                    />
+                </div>
             </div>
 
-            <!-- End Date -->
-            <div>
-                <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">To Date</label>
-                <input
-                    type="date"
-                    name="end_date"
-                    id="end_date"
-                    value="{{ filters.end_date }}"
-                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-            </div>
-
-            <!-- Location -->
-            <div>
-                <label for="location" class="block text-sm font-medium text-gray-700 mb-1">Location</label>
-                <input
-                    type="text"
-                    name="location"
-                    id="location"
-                    value="{{ filters.location }}"
-                    placeholder="e.g., Augusta, GA, USA"
-                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
-            </div>
-
-            <!-- Radius -->
-            <div>
-                <label for="radius" class="block text-sm font-medium text-gray-700 mb-1">Radius (miles)</label>
+            <!-- Radius Input -->
+            <div class="space-y-2">
+                <label for="radius" class="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Radius (Miles) <span class="text-gray-400 normal-case font-normal">- Optional</span>
+                </label>
                 <input
                     type="number"
                     name="radius"
@@ -131,37 +267,40 @@
                     placeholder="50"
                     min="1"
                     max="5000"
-                    class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                >
+                    class="w-full pl-3 pr-3 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm shadow-sm"
+                />
             </div>
 
-            <!-- Buttons -->
-            <div class="flex items-end gap-2">
-                <button
-                    type="submit"
-                    class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                >
-                    Apply Filters
-                </button>
+            <!-- Actions -->
+            <div class="flex items-end gap-3 lg:col-span-3">
                 <a
                     href="{% url 'events:event_list' %}"
-                    class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+                    class="px-6 py-2.5 rounded-lg border border-gray-300 text-slate-600 font-medium hover:bg-gray-50 hover:text-slate-900 transition-colors text-sm"
                 >
-                    Clear
+                    Clear Filters
                 </a>
+                <button
+                    type="submit"
+                    class="px-6 py-2.5 rounded-lg bg-emerald-700 text-white font-medium hover:bg-emerald-800 shadow-md hover:shadow-lg transform transition-all active:scale-95 text-sm flex items-center gap-2"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    Find Events
+                </button>
             </div>
         </form>
     </div>
 
     <!-- Loading Indicator -->
     <div id="loading" class="htmx-indicator mb-4">
-        <div class="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded">
+        <div class="bg-emerald-50 border border-emerald-200 text-emerald-700 px-4 py-3 rounded-lg">
             Loading events...
         </div>
     </div>
 
-    <!-- Events Table -->
-    <div id="event-table">
+    <!-- Results Section -->
+    <div id="event-results">
         {% include "events/_event_table.html" %}
     </div>
 </div>
