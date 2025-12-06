@@ -17,13 +17,15 @@
     {% if events %}
         <div class="grid grid-cols-1 gap-4">
             {% for event in events %}
-                <div class="group bg-white rounded-xl border border-gray-200 p-4 sm:p-5 hover:border-emerald-400 hover:shadow-md transition-all duration-200 flex flex-col md:flex-row gap-6 relative overflow-hidden">
-                    <!-- Decorative color bar on hover -->
-                    <div class="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                {% with primary_tour=event.tours.first %}
+                <div class="group rounded-xl border border-gray-200 p-4 sm:p-5 hover:shadow-md transition-all duration-200 flex flex-col md:flex-row gap-6 relative overflow-hidden
+                    {% if primary_tour %}{{ primary_tour.name|tour_color_bg }} {{ primary_tour.name|tour_color_border_hover }}{% else %}bg-white hover:border-emerald-400{% endif %}">
+                    <!-- Decorative color bar - always visible with tour color -->
+                    <div class="absolute left-0 top-0 bottom-0 w-1 {% if primary_tour %}{{ primary_tour.name|tour_color_accent }} opacity-60 group-hover:opacity-100{% else %}bg-emerald-500 opacity-0 group-hover:opacity-100{% endif %} transition-opacity"></div>
 
                     <!-- Date Block -->
-                    <div class="flex-shrink-0 flex md:flex-col items-center justify-center md:justify-start gap-1 md:w-20 border-b md:border-b-0 md:border-r border-gray-100 pb-3 md:pb-0 md:pr-4">
-                        <span class="text-xs font-bold text-emerald-700 uppercase tracking-wider">{{ event.start_date|month_short }}</span>
+                    <div class="flex-shrink-0 flex md:flex-col items-center justify-center md:justify-start gap-1 md:w-20 border-b md:border-b-0 md:border-r border-gray-100 pb-3 md:pb-0 md:pr-4 {% if primary_tour %}{{ primary_tour.name|tour_color_bg_solid }}{% endif %}">
+                        <span class="text-xs font-bold {% if primary_tour %}{{ primary_tour.name|tour_color_text }}{% else %}text-emerald-700{% endif %} uppercase tracking-wider">{{ event.start_date|month_short }}</span>
                         <span class="text-3xl font-black text-slate-800 leading-none">{{ event.start_date|day_number }}</span>
                         <span class="text-xs text-gray-400 font-medium mt-1">{{ event.start_date|year_number }}</span>
                     </div>
@@ -34,11 +36,7 @@
                             <!-- Badges Row -->
                             <div class="flex items-center gap-2 mb-2 flex-wrap">
                                 {% for tour in event.tours.all %}
-                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border
-                                        {% if 'PGA' in tour.name %}bg-blue-50 text-blue-700 border-blue-200
-                                        {% elif 'LIV' in tour.name %}bg-slate-100 text-slate-600 border-slate-200
-                                        {% elif 'LPGA' in tour.name %}bg-pink-50 text-pink-700 border-pink-200
-                                        {% else %}bg-gray-100 text-gray-600 border-gray-200{% endif %}">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border {{ tour.name|tour_color_badge }}">
                                         {{ tour.name }}
                                     </span>
                                 {% endfor %}
@@ -48,7 +46,7 @@
                             </div>
 
                             <!-- Event Name -->
-                            <h3 class="text-xl font-bold text-slate-900 group-hover:text-emerald-800 transition-colors">
+                            <h3 class="text-xl font-bold text-slate-900 {% if primary_tour %}{{ primary_tour.name|tour_color_text_hover }}{% else %}group-hover:text-emerald-800{% endif %} transition-colors">
                                 {% if event.external_url %}
                                     <a href="{{ event.external_url }}" target="_blank" class="hover:underline">
                                         {{ event.name }}
@@ -79,7 +77,8 @@
                                     <p class="text-xs text-slate-400">Ends {{ event.end_date|month_short }} {{ event.end_date|day_number }}</p>
                                 {% endif %}
                             </div>
-                            <button class="w-full md:w-auto px-5 py-2 rounded-lg bg-white border border-gray-200 text-slate-700 text-sm font-semibold hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-all flex items-center justify-center gap-2 group-hover:bg-emerald-600 group-hover:text-white group-hover:border-emerald-600">
+                            <button class="w-full md:w-auto px-5 py-2 rounded-lg bg-white border border-gray-200 text-slate-700 text-sm font-semibold transition-all flex items-center justify-center gap-2
+                                {% if primary_tour %}{{ primary_tour.name|tour_color_button_hover_classes }} {{ primary_tour.name|tour_color_button_group_hover_classes }}{% else %}hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 group-hover:bg-emerald-600 group-hover:text-white group-hover:border-emerald-600{% endif %}">
                                 Details
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
@@ -88,6 +87,7 @@
                         </div>
                     </div>
                 </div>
+                {% endwith %}
             {% endfor %}
         </div>
     {% else %}
