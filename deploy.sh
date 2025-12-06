@@ -12,8 +12,8 @@ fi
 
 # Build Tailwind CSS locally (for development/testing, Docker will rebuild)
 echo "📦 Building Tailwind CSS..."
-if [ -f ./tailwindcss ]; then
-    ./tailwindcss -i static/css/input.css -o static/css/output.css --minify
+if command -v tailwindcss >/dev/null 2>&1; then
+    tailwindcss -i static/css/input.css -o static/css/output.css --minify
     echo "✅ Tailwind CSS built"
 else
     echo "⚠️  Warning: tailwindcss binary not found, skipping local build"
