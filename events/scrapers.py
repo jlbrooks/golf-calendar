@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from typing import List, Dict, Optional
 import re
+import json
 
 
 class PGATourScraper:
@@ -429,6 +430,278 @@ class PGATourScraper:
         if any(major in name_lower for major in ['masters', 'u.s. open', 'open championship', 'pga championship']):
             return 'major'
         elif 'playoff' in name_lower or 'tour championship' in name_lower:
+            return 'playoff'
+        else:
+            return 'regular'
+
+
+class LPGAScraper:
+    """Scraper for LPGA Tour schedule using their JSON API."""
+
+    BASE_URL = "https://www.lpga.com"
+    API_URL = "https://www.lpga.com/-/tournaments/list"
+
+    def __init__(self, year: int = None):
+        self.year = year or datetime.now().year
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.page = None
+
+    def __enter__(self):
+        self.playwright = sync_playwright().start()
+
+        self.browser = self.playwright.chromium.launch(
+            headless=True,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+            ]
+        )
+
+        self.context = self.browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            viewport={'width': 1920, 'height': 1080},
+            locale='en-US',
+        )
+
+        self.page = self.context.new_page()
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.page:
+            self.page.close()
+        if self.context:
+            self.context.close()
+        if self.browser:
+            self.browser.close()
+        if self.playwright:
+            self.playwright.stop()
+
+    def fetch_schedule(self) -> List[Dict]:
+        """Fetch tournament schedule from LPGA API."""
+        if not self.page:
+            raise RuntimeError("Scraper must be used as context manager: with LPGAScraper() as scraper:")
+
+        events = []
+
+        url = f"{self.API_URL}?year={self.year}&state=all"
+        response = self.page.goto(url, wait_until='networkidle', timeout=60000)
+
+        if not response or response.status != 200:
+            raise Exception(f"HTTP {response.status if response else 'No response'}")
+
+        try:
+            data = response.json()
+        except Exception as e:
+            raise Exception(f"Failed to parse JSON response: {e}")
+
+        months = data.get('result', {}).get('months', [])
+
+        for month_data in months:
+            for tournament in month_data.get('list', []):
+                event = self._parse_tournament(tournament)
+                if event:
+                    events.append(event)
+
+        return events
+
+    def _parse_tournament(self, tournament: Dict) -> Optional[Dict]:
+        """Parse a tournament from the API response."""
+        name = tournament.get('name', '').strip()
+        if not name:
+            return None
+
+        date_range = tournament.get('dateRange', '')
+        month_str = tournament.get('month', '')  # e.g., "January 2026"
+
+        start_date, end_date = self._parse_date_range(date_range, month_str)
+        if not start_date or not end_date:
+            return None
+
+        venue = tournament.get('course', '').strip()
+        if not venue or venue == 'To be Confirmed':
+            venue = f"{name} Course"
+
+        location = tournament.get('location', '')
+        city, state, country = self._parse_location(location)
+
+        link = tournament.get('link', {})
+        external_url = ''
+        if link.get('href'):
+            external_url = f"{self.BASE_URL}{link['href']}"
+
+        category = self._determine_category(name)
+
+        return {
+            'name': name,
+            'start_date': start_date,
+            'end_date': end_date,
+            'venue': venue,
+            'city': city,
+            'state': state,
+            'country': country,
+            'category': category,
+            'external_url': external_url,
+        }
+
+    def _parse_date_range(self, date_range: str, month_str: str) -> tuple[Optional[datetime.date], Optional[datetime.date]]:
+        """
+        Parse date range like 'Jan 30 - Feb  2' or 'Dec 12 - 14'.
+        Uses month_str like 'January 2026' to get the year.
+        """
+        # Extract year from month_str (e.g., "January 2026")
+        year_match = re.search(r'(\d{4})', month_str)
+        year = int(year_match.group(1)) if year_match else self.year
+
+        # Clean up extra spaces in date range
+        date_range = ' '.join(date_range.split())
+
+        # Pattern 1: Same month - "Dec 12 - 14"
+        pattern1 = r'([A-Za-z]+)\s+(\d+)\s*-\s*(\d+)'
+        match = re.search(pattern1, date_range)
+
+        if match:
+            month_name = match.group(1)
+            start_day = int(match.group(2))
+            end_day = int(match.group(3))
+
+            month_num = self._parse_month(month_name)
+            if not month_num:
+                return None, None
+
+            start_date = datetime(year, month_num, start_day).date()
+            end_date = datetime(year, month_num, end_day).date()
+
+            return start_date, end_date
+
+        # Pattern 2: Different months - "Jan 30 - Feb 2"
+        pattern2 = r'([A-Za-z]+)\s+(\d+)\s*-\s*([A-Za-z]+)\s+(\d+)'
+        match = re.search(pattern2, date_range)
+
+        if match:
+            start_month_name = match.group(1)
+            start_day = int(match.group(2))
+            end_month_name = match.group(3)
+            end_day = int(match.group(4))
+
+            start_month = self._parse_month(start_month_name)
+            end_month = self._parse_month(end_month_name)
+
+            if not start_month or not end_month:
+                return None, None
+
+            start_year = year
+            end_year = year
+            # Handle year boundary (e.g., Dec 30 - Jan 2)
+            if end_month < start_month:
+                end_year = year + 1
+
+            start_date = datetime(start_year, start_month, start_day).date()
+            end_date = datetime(end_year, end_month, end_day).date()
+
+            return start_date, end_date
+
+        return None, None
+
+    def _parse_month(self, month_str: str) -> Optional[int]:
+        """Convert month name/abbreviation to month number."""
+        month_str = month_str.lower()[:3]
+        months = {
+            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4,
+            'may': 5, 'jun': 6, 'jul': 7, 'aug': 8,
+            'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+        }
+        return months.get(month_str)
+
+    def _parse_location(self, location_str: str) -> tuple[str, str, str]:
+        """
+        Parse location string into city, state, country.
+        LPGA locations can be:
+        - "Naples, FL" (US)
+        - "Singapore, Singapore" (international)
+        - "Evian-les-Bains, France" (international)
+        - "Haenam-gun, Jeollanam-do, Republic of Korea" (complex international)
+        """
+        if not location_str:
+            return '', '', 'USA'
+
+        parts = [p.strip() for p in location_str.split(',')]
+
+        if len(parts) == 2:
+            city = parts[0]
+            second = parts[1].strip()
+
+            # Check if it's a US state abbreviation
+            if len(second) == 2 and second.isupper():
+                state = self._expand_state(second)
+                return city, state, 'USA'
+            else:
+                # International - second part is country
+                return city, '', second
+
+        elif len(parts) >= 3:
+            city = parts[0]
+            # Last part is usually country
+            country = parts[-1].strip()
+
+            # For US locations like "Pacific Palisades, California"
+            if country in ['California', 'Florida', 'Texas', 'Arizona', 'Nevada',
+                          'New Jersey', 'Ohio', 'Michigan', 'Oregon', 'Massachusetts',
+                          'Minnesota', 'Arkansas', 'Hawaii']:
+                return city, country, 'USA'
+
+            # Check if second-to-last might be a region/state
+            state = parts[1].strip() if len(parts) > 2 else ''
+            return city, state, country
+
+        elif len(parts) == 1:
+            return parts[0], '', 'USA'
+
+        return '', '', 'USA'
+
+    def _expand_state(self, state_abbr: str) -> str:
+        """Expand common state abbreviations."""
+        state_abbr = state_abbr.replace('.', '').strip().upper()
+
+        states = {
+            'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas',
+            'CA': 'California', 'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware',
+            'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii', 'ID': 'Idaho',
+            'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas',
+            'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+            'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi',
+            'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada',
+            'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
+            'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma',
+            'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
+            'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah',
+            'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia',
+            'WI': 'Wisconsin', 'WY': 'Wyoming',
+        }
+
+        return states.get(state_abbr, state_abbr)
+
+    def _determine_category(self, event_name: str) -> str:
+        """Determine event category from name."""
+        name_lower = event_name.lower()
+
+        # LPGA majors
+        majors = [
+            'chevron championship',
+            'u.s. women\'s open',
+            'kpmg women\'s pga',
+            'amundi evian championship',
+            'aig women\'s open',
+        ]
+
+        if any(major in name_lower for major in majors):
+            return 'major'
+        elif 'solheim cup' in name_lower:
+            return 'team'
+        elif 'cme group tour championship' in name_lower:
             return 'playoff'
         else:
             return 'regular'

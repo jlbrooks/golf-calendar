@@ -3,6 +3,7 @@ from django.http import JsonResponse
 from django.db.models import Q
 from django.contrib.gis.geos import Point
 from django.contrib.gis.measure import D
+from django.utils import timezone
 from .models import Event, Tour, Venue
 from .utils import geocode_address, autocomplete_location
 
@@ -18,6 +19,12 @@ def event_list(request):
     end_date = request.GET.get('end_date')
     location = request.GET.get('location')
     radius = request.GET.get('radius', '50')
+    show_past_events = request.GET.get('show_past_events') == 'true'
+
+    # Filter out past events by default
+    if not show_past_events:
+        today = timezone.now().date()
+        events = events.filter(end_date__gte=today)
 
     if tour_id:
         events = events.filter(tours__id=tour_id)
@@ -124,6 +131,7 @@ def event_list(request):
             'end_date': end_date,
             'location': location,
             'radius': radius,
+            'show_past_events': show_past_events,
         }
     }
 
