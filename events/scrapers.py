@@ -705,3 +705,267 @@ class LPGAScraper:
             return 'playoff'
         else:
             return 'regular'
+
+
+class KornFerryTourScraper:
+    """Scraper for Korn Ferry Tour schedule using browser automation."""
+
+    BASE_URL = "https://www.pgatour.com"
+    SCHEDULE_URL = "https://www.pgatour.com/korn-ferry-tour/schedule"
+
+    def __init__(self):
+        self.playwright = None
+        self.browser = None
+        self.context = None
+        self.page = None
+
+    def __enter__(self):
+        self.playwright = sync_playwright().start()
+
+        self.browser = self.playwright.chromium.launch(
+            headless=True,
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+            ]
+        )
+
+        self.context = self.browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            viewport={'width': 1920, 'height': 1080},
+            locale='en-US',
+            timezone_id='America/New_York',
+            permissions=[],
+            extra_http_headers={
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+            }
+        )
+
+        self.page = self.context.new_page()
+
+        self.page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.chrome = {
+                runtime: {}
+            };
+        """)
+
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.page:
+            self.page.close()
+        if self.context:
+            self.context.close()
+        if self.browser:
+            self.browser.close()
+        if self.playwright:
+            self.playwright.stop()
+
+    def fetch_schedule(self) -> List[Dict]:
+        """Fetch tournament schedule from Korn Ferry Tour using browser automation."""
+        if not self.page:
+            raise RuntimeError("Scraper must be used as context manager: with KornFerryTourScraper() as scraper:")
+
+        events = []
+
+        response = self.page.goto(self.SCHEDULE_URL, wait_until='domcontentloaded', timeout=90000)
+
+        if response and response.status != 200:
+            raise Exception(f"HTTP {response.status}: {response.status_text}")
+
+        page_title = self.page.title()
+        if "cloudflare" in page_title.lower() or "request could not be satisfied" in page_title.lower():
+            raise Exception("CloudFlare is blocking automated access")
+
+        import time
+        time.sleep(5)
+
+        try:
+            self.page.wait_for_selector('article, [role="article"], .schedule, h2, h3', timeout=10000)
+        except PlaywrightTimeoutError:
+            pass
+
+        html_content = self.page.content()
+        events = self._extract_next_data(html_content)
+
+        return events
+
+    def _extract_next_data(self, html: str) -> List[Dict]:
+        """Extract and parse __NEXT_DATA__ from Next.js page."""
+        import json
+
+        match = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.DOTALL)
+        if not match:
+            return []
+
+        try:
+            json_str = match.group(1)
+            data = json.loads(json_str)
+
+            # Path: props.pageProps.dehydratedState.queries[].state.data.tournaments
+            queries = data.get('props', {}).get('pageProps', {}).get('dehydratedState', {}).get('queries', [])
+
+            tournaments_data = None
+            for query in queries:
+                state_data = query.get('state', {}).get('data', {})
+                if 'tournaments' in state_data:
+                    tournaments_data = state_data['tournaments']
+                    break
+
+            if not tournaments_data:
+                return []
+
+            events = []
+            for tournament in tournaments_data:
+                event = self._parse_tournament_json(tournament)
+                if event:
+                    events.append(event)
+
+            return events
+
+        except (json.JSONDecodeError, KeyError):
+            return []
+
+    def _parse_tournament_json(self, tournament: Dict) -> Optional[Dict]:
+        """Parse a tournament from the JSON data."""
+        name = tournament.get('name', '').strip()
+        if not name:
+            return None
+
+        display_date = tournament.get('displayDate', '')
+        year = int(tournament.get('year', datetime.now().year))
+
+        start_date, end_date = self._parse_display_date(display_date, year)
+        if not start_date or not end_date:
+            return None
+
+        course_data = tournament.get('courseData', {})
+        venue = course_data.get('name', '').strip() or f"{name} Course"
+        city = course_data.get('city', '').strip()
+
+        if ',' in city:
+            city = city.split(',')[0].strip()
+
+        state = course_data.get('stateCode', '').strip()
+        country = 'USA'
+
+        if state:
+            state = self._expand_state(state)
+
+        # Korn Ferry Tour doesn't have majors, but has finals
+        category = 'regular'
+        category_info = tournament.get('tournamentCategoryInfo')
+        if category_info:
+            cat_type = category_info.get('type', '').upper()
+            if cat_type in ['PLAYOFF', 'PLAYOFFS', 'FINAL', 'FINALS']:
+                category = 'playoff'
+
+        external_url = tournament.get('tournamentSiteUrl', '')
+        if not external_url:
+            tournament_id = tournament.get('tournamentId', '')
+            if tournament_id:
+                external_url = f"https://www.pgatour.com/korn-ferry-tour/tournaments/{tournament_id}"
+
+        return {
+            'name': name,
+            'start_date': start_date,
+            'end_date': end_date,
+            'venue': venue,
+            'city': city,
+            'state': state,
+            'country': country,
+            'category': category,
+            'external_url': external_url,
+        }
+
+    def _parse_display_date(self, display_date: str, year: int) -> tuple[Optional[datetime.date], Optional[datetime.date]]:
+        """Parse display date like 'Jan 2 - 5' or 'Dec 30 - Jan 2'."""
+        pattern1 = r'([A-Za-z]+)\s+(\d+)\s*-\s*(\d+)'
+        match = re.search(pattern1, display_date)
+
+        if match:
+            month_str = match.group(1)
+            start_day = int(match.group(2))
+            end_day = int(match.group(3))
+
+            month_num = self._parse_month(month_str)
+            if not month_num:
+                return None, None
+
+            start_date = datetime(year, month_num, start_day).date()
+            end_date = datetime(year, month_num, end_day).date()
+
+            return start_date, end_date
+
+        pattern2 = r'([A-Za-z]+)\s+(\d+)\s*-\s*([A-Za-z]+)\s+(\d+)'
+        match = re.search(pattern2, display_date)
+
+        if match:
+            start_month_str = match.group(1)
+            start_day = int(match.group(2))
+            end_month_str = match.group(3)
+            end_day = int(match.group(4))
+
+            start_month = self._parse_month(start_month_str)
+            end_month = self._parse_month(end_month_str)
+
+            if not start_month or not end_month:
+                return None, None
+
+            start_year = year
+            end_year = year
+            if end_month < start_month:
+                end_year = year + 1
+
+            start_date = datetime(start_year, start_month, start_day).date()
+            end_date = datetime(end_year, end_month, end_day).date()
+
+            return start_date, end_date
+
+        return None, None
+
+    def _parse_month(self, month_str: str) -> Optional[int]:
+        """Convert month name/abbreviation to month number."""
+        month_str = month_str.lower()[:3]  # First 3 letters
+        months = {
+            'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4,
+            'may': 5, 'jun': 6, 'jul': 7, 'aug': 8,
+            'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+        }
+        return months.get(month_str)
+
+    def _expand_state(self, state_abbr: str) -> str:
+        """Expand common state abbreviations."""
+        state_abbr = state_abbr.replace('.', '').strip().upper()
+
+        states = {
+            'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas',
+            'CA': 'California', 'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware',
+            'FL': 'Florida', 'GA': 'Georgia', 'HI': 'Hawaii', 'ID': 'Idaho',
+            'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa', 'KS': 'Kansas',
+            'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+            'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi',
+            'MO': 'Missouri', 'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada',
+            'NH': 'New Hampshire', 'NJ': 'New Jersey', 'NM': 'New Mexico', 'NY': 'New York',
+            'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio', 'OK': 'Oklahoma',
+            'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
+            'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah',
+            'VT': 'Vermont', 'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia',
+            'WI': 'Wisconsin', 'WY': 'Wyoming',
+        }
+
+        return states.get(state_abbr, state_abbr)
