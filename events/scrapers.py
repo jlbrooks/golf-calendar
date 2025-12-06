@@ -15,7 +15,8 @@ class PGATourScraper:
     BASE_URL = "https://www.pgatour.com"
     SCHEDULE_URL = "https://www.pgatour.com/schedule?view=fullSchedule&month=All"
 
-    def __init__(self):
+    def __init__(self, year: int = None):
+        self.year = year or datetime.now().year
         self.playwright = None
         self.browser = None
         self.context = None
@@ -84,7 +85,8 @@ class PGATourScraper:
 
         events = []
 
-        response = self.page.goto(self.SCHEDULE_URL, wait_until='domcontentloaded', timeout=90000)
+        url = f"{self.BASE_URL}/schedule/{self.year}"
+        response = self.page.goto(url, wait_until='domcontentloaded', timeout=90000)
 
         if response and response.status != 200:
             raise Exception(f"HTTP {response.status}: {response.status_text}")
@@ -149,7 +151,7 @@ class PGATourScraper:
             return None
 
         display_date = tournament.get('displayDate', '')
-        year = int(tournament.get('year', datetime.now().year))
+        year = int(tournament.get('year', self.year))
 
         start_date, end_date = self._parse_display_date(display_date, year)
         if not start_date or not end_date:

@@ -1,4 +1,5 @@
 """Management command to scrape PGA Tour schedule."""
+from datetime import datetime
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from events.models import Tour, Venue, Event
@@ -11,6 +12,12 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument(
+            '--year',
+            type=int,
+            default=None,
+            help='Year to scrape (default: current year)',
+        )
+        parser.add_argument(
             '--dry-run',
             action='store_true',
             help='Run without saving to database',
@@ -22,10 +29,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        year = options['year'] or datetime.now().year
         dry_run = options['dry_run']
         should_geocode = options['geocode']
 
-        self.stdout.write('Starting PGA Tour scrape...')
+        self.stdout.write(f'Starting PGA Tour scrape for {year}...')
 
         if not dry_run:
             tour, created = Tour.objects.get_or_create(
@@ -38,7 +46,7 @@ class Command(BaseCommand):
             tour = None
 
         try:
-            with PGATourScraper() as scraper:
+            with PGATourScraper(year=year) as scraper:
                 events_data = scraper.fetch_schedule()
         except Exception as e:
             self.stdout.write(self.style.ERROR(f'Failed to fetch schedule: {e}'))
