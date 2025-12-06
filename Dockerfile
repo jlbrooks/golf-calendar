@@ -22,6 +22,10 @@ COPY pyproject.toml uv.lock ./
 # Install dependencies
 RUN uv sync --frozen --no-cache
 
+# Install Playwright browsers and system dependencies
+RUN uv run playwright install-deps && \
+    uv run playwright install
+
 # Copy Tailwind CSS binary
 COPY tailwindcss /usr/local/bin/tailwindcss
 RUN chmod +x /usr/local/bin/tailwindcss
