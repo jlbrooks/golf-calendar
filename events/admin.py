@@ -58,6 +58,5 @@ class EventAdmin(admin.ModelAdmin):
     )
 
     def tour_list(self, obj):
-        """Display comma-separated list of tours in list view."""
         return obj.tour_names or 'No tour affiliation'
     tour_list.short_description = 'Tours'

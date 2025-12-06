@@ -29,8 +29,6 @@ class Venue(models.Model):
     city = models.CharField(max_length=200)
     state = models.CharField(max_length=100, blank=True)
     country = models.CharField(max_length=100)
-
-    # PostGIS point field for location
     location = models.PointField(geography=True, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -49,12 +47,10 @@ class Venue(models.Model):
 
     @property
     def latitude(self):
-        """Return latitude from the point field."""
         return self.location.y if self.location else None
 
     @property
     def longitude(self):
-        """Return longitude from the point field."""
         return self.location.x if self.location else None
 
 
@@ -105,25 +101,21 @@ class Event(models.Model):
         return f"{self.name} ({self.start_date.year})"
 
     def clean(self):
-        """Validate that end_date is not before start_date."""
         from django.core.exceptions import ValidationError
         if self.end_date and self.start_date and self.end_date < self.start_date:
             raise ValidationError('End date cannot be before start date.')
 
     @property
     def tour_names(self):
-        """Return comma-separated list of tour names."""
         return ', '.join(tour.name for tour in self.tours.all())
 
     @property
     def is_upcoming(self):
-        """Check if event is in the future."""
         from django.utils import timezone
         return self.start_date > timezone.now().date()
 
     @property
     def is_current(self):
-        """Check if event is currently happening."""
         from django.utils import timezone
         today = timezone.now().date()
         return self.start_date <= today <= self.end_date

@@ -5,19 +5,13 @@ from time import sleep
 
 
 def geocode_address(city, state, country):
-    """
-    Geocode an address using Nominatim (OpenStreetMap).
-
-    Returns a Point object (longitude, latitude) or None if geocoding fails.
-    """
-    # Build address string
+    """Geocode an address using Nominatim. Returns Point or None."""
     address_parts = [city]
     if state:
         address_parts.append(state)
     address_parts.append(country)
     address = ', '.join(address_parts)
 
-    # Use Nominatim API
     url = 'https://nominatim.openstreetmap.org/search'
     params = {
         'q': address,
@@ -46,18 +40,8 @@ def geocode_address(city, state, country):
 
 
 def geocode_venue(venue, save=True):
-    """
-    Geocode a venue and optionally save it.
-
-    Args:
-        venue: Venue model instance
-        save: Whether to save the venue after geocoding
-
-    Returns:
-        True if geocoding was successful, False otherwise
-    """
+    """Geocode a venue and optionally save it. Returns True if successful."""
     if venue.location:
-        # Already has location
         return True
 
     location = geocode_address(venue.city, venue.state, venue.country)

@@ -10,7 +10,6 @@ def event_list(request):
     """Main event listing page with filters."""
     events = Event.objects.select_related('venue').prefetch_related('tours').all()
 
-    # Get filter parameters
     tour_id = request.GET.get('tour')
     category = request.GET.get('category')
     status = request.GET.get('status')
@@ -19,7 +18,6 @@ def event_list(request):
     location = request.GET.get('location')
     radius = request.GET.get('radius', '50')
 
-    # Apply filters
     if tour_id:
         events = events.filter(tours__id=tour_id)
 
@@ -35,10 +33,7 @@ def event_list(request):
     if end_date:
         events = events.filter(end_date__lte=end_date)
 
-    # Location-based filtering
     if location and location.strip():
-        # Try to geocode the location
-        # Parse location (assume format: "City, State, Country" or "City, Country")
         parts = [p.strip() for p in location.split(',')]
         if len(parts) == 3:
             city, state, country = parts
@@ -54,17 +49,13 @@ def event_list(request):
         if point and radius:
             try:
                 radius_miles = float(radius)
-                # Filter venues within radius
                 events = events.filter(
                     venue__location__distance_lte=(point, D(mi=radius_miles))
                 )
             except (ValueError, TypeError):
                 pass
 
-    # Order by start date
     events = events.order_by('start_date', 'name').distinct()
-
-    # Get all tours for filter dropdown
     tours = Tour.objects.all()
 
     context = {

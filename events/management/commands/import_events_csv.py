@@ -5,9 +5,6 @@ from events.models import Tour, Venue, Event
 from events.utils import geocode_venue
 from datetime import datetime
 import csv
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -79,9 +76,7 @@ class Command(BaseCommand):
             except Exception as e:
                 error_count += 1
                 self.stdout.write(self.style.ERROR(f'  ✗ Error: {row.get("name", "unknown")}: {e}'))
-                logger.exception(f'Failed to import row: {row}')
 
-        # Summary
         self.stdout.write('')
         self.stdout.write(self.style.SUCCESS('Import complete!'))
         self.stdout.write(f'  Created: {created_count}')
@@ -91,19 +86,15 @@ class Command(BaseCommand):
     @transaction.atomic
     def _import_event(self, row: dict, should_geocode: bool) -> str:
         """Import a single event from CSV row."""
-
-        # Parse dates
         start_date = datetime.strptime(row['start_date'], '%Y-%m-%d').date()
         end_date = datetime.strptime(row['end_date'], '%Y-%m-%d').date()
 
-        # Get or create tour
         tour = None
         if row.get('tour_name'):
             tour, _ = Tour.objects.get_or_create(
                 name=row['tour_name'].strip()
             )
 
-        # Get or create venue
         venue, venue_created = Venue.objects.get_or_create(
             name=row['venue_name'].strip(),
             city=row['city'].strip(),
@@ -111,12 +102,9 @@ class Command(BaseCommand):
             defaults={'state': row.get('state', '').strip()}
         )
 
-        # Geocode if needed
         if (venue_created or not venue.location) and should_geocode:
-            if geocode_venue(venue, save=True):
-                logger.info(f'Geocoded venue: {venue}')
+            geocode_venue(venue, save=True)
 
-        # Check if event exists
         event_year = start_date.year
         existing_events = Event.objects.filter(
             name=row['name'].strip(),
@@ -129,7 +117,6 @@ class Command(BaseCommand):
             category = 'regular'
 
         if existing_events.exists():
-            # Update
             event = existing_events.first()
             event.start_date = start_date
             event.end_date = end_date
@@ -142,19 +129,18 @@ class Command(BaseCommand):
                 event.tours.add(tour)
 
             return 'updated'
-        else:
-            # Create
-            event = Event.objects.create(
-                name=row['name'].strip(),
-                venue=venue,
-                start_date=start_date,
-                end_date=end_date,
-                category=category,
-                status='scheduled',
-                external_url=row.get('external_url', '').strip(),
-            )
 
-            if tour:
-                event.tours.add(tour)
+        event = Event.objects.create(
+            name=row['name'].strip(),
+            venue=venue,
+            start_date=start_date,
+            end_date=end_date,
+            category=category,
+            status='scheduled',
+            external_url=row.get('external_url', '').strip(),
+        )
 
-            return 'created'
+        if tour:
+            event.tours.add(tour)
+
+        return 'created'
